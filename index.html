@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mario Game</title>
+</head>
+<body>
+    <canvas id="myCanvas" width="1000" height="600" style="border:1px solid #cccccc;"/>
+    <script src="m.json.js"></script>
+    <script>
+
+        let my_id = -1;
+
+        function httpPost(url, payload, callback, model)
+        {
+            let request = new XMLHttpRequest();
+            request.onreadystatechange = function()
+            {
+                if(request.readyState == 4)
+                {
+                    if(request.status == 200)
+                        callback(request.responseText, model);
+                    else
+                    {
+                        if(request.status == 0 && request.statusText.length == 0)
+                            alert("Connection failed");
+                        else
+                            alert("Server returned status " + request.status + ", " + request.statusText);
+                    }
+                }
+            };
+            request.open('post', url, true);
+            request.setRequestHeader('Content-Type',
+            'application/x-www-form-urlencoded');
+            request.send(payload);
+        }
+
+        const cb = (response, model) => {       
+            let ob = JSON.parse(response);
+
+            if(ob.action == 0) { // Get initial ID
+                my_id = ob.clientid;
+            }
+            else if(ob.action == 1) { // Sending data
+                if(my_id == 1) {
+                    if(model.mario2.x - ob.x2 != 0)
+                        model.mario2.imageCycle();
+
+                    // Hack fix to get other mario to jump a bit higher
+                    let tmp = 0
+                    if(model.mario2.y != ob.y2)
+                        tmp = 7;
+                    else
+                        tmp = 0;
+                                        
+                    model.mario2.x = ob.x2;
+                    model.mario2.y = ob.y2 - tmp;
+                }
+                if(my_id == 2) {
+                    if(model.mario.x - ob.x1 != 0)
+                        model.mario.imageCycle();
+
+                    // Hack fix to get other mario to jump a bit higher
+                    let tmp = 0
+                    if(model.mario.y != ob.y1)
+                        tmp = 7;
+                    else
+                        tmp = 0;
+
+                    model.mario.x = ob.x1;
+                    model.mario.y = ob.y1 - tmp;
+                }
+            }
+
+            if(ob.action == 2) {
+                console.log(ob);
+            }
+        };
+
+        function getInitialId(model) {
+            let ob = {};
+            ob.message = "send"
+            ob.x = 0;
+            ob.y = 0;
+            ob.action = 0;
+            ob.clientid = 0;
+            let json_string = JSON.stringify(ob);
+
+            httpPost("ajax_handler.html", json_string, cb)
+        }
+
+        function sendCoordinates(xx,yy, model) {
+        let ob = {};
+        ob.message = "send"
+        ob.x = xx;
+        ob.y = yy;
+        ob.action = 1;
+        ob.clientid = my_id;
+        let json_string = JSON.stringify(ob);
+
+        httpPost("ajax_handler.html", json_string, cb, model)
+        }
+
+        class Sprite {
+            constructor(x, y, w, h, imgSrc){
+                if(new.target == Sprite)
+                    throw new TypeError("Cannot construct Abstract instances directly");
+
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+                this.image = new Image();
+                this.image.src = imgSrc;
+            }
+
+            isCoinBlock(){
+                return false;
+            }
+
+            isMario(){
+                return false;
+            }
+
+            isCoin(){
+                return false;
+            }
+
+            collisionDetection(mario, sprite, model) {
+                if(mario.x > sprite.x + sprite.w)
+                    return false;
+                if(mario.x + mario.w < sprite.x)
+                    return false;
+                if(mario.y > sprite.y + sprite.h)
+                    return false;
+                if(mario.y + mario.h < sprite.y)
+                    return false;
+
+                this.collisionHandler(mario, sprite, model);
+
+                return true;
+            }
+
+            collisionHandler(mario, sprite, model) {
+               if(sprite.isCoin()) {
+
+               }
+               else if(mario.y <= sprite.y + sprite.h && mario.prevY > sprite.y + sprite.h) // Hits bottom
+               {
+                   if(sprite.isCoinBlock())
+                       sprite.addCoin(sprite, model);
+
+                   mario.y = sprite.y + sprite.h + 1;
+                   mario.verticalVelocity = 0;
+               }
+               else if (mario.x <= sprite.x + sprite.w && mario.prevX > sprite.x + sprite.w) // Hits right wall
+                   mario.x = sprite.x + sprite.w + 1;
+               else if(mario.y + mario.h >= sprite.y && mario.prevY + mario.h < sprite.y) // Lands on top
+               {
+                   mario.y = sprite.y - mario.h - 1;
+                   mario.isGrounded = true;
+                   mario.verticalVelocity = 0.0;
+                   mario.jumpTime = 0;
+               }
+               else if(mario.x + mario.w >= sprite.x & mario.prevX < sprite.x) // Hits left wall
+                   mario.x = sprite.x - mario.w - 1;
+               else
+                   mario.x = sprite.x + sprite.w + 1;
+            }
+
+            update(){
+
+            }
+        }
+
+        class Brick extends Sprite {
+            constructor(x,y,w,h){
+                super(x,y,w,h, 'bk.jpg')
+
+            }
+        }
+
+        class Coin extends Sprite {
+            constructor(x,y,imgSrc){
+                super(x,y,75,75,imgSrc);
+
+                this.verticalVelocity = -15;
+                this.horizontalVelocity = this.getRandomInt(-10, 11);
+
+            }
+
+            getRandomInt(min, max) {
+                min = Math.ceil(min);
+                max = Math.floor(max);
+                return Math.floor(Math.random() * (max - min)) + min; //The maximum is exclusive and the minimum is inclusive
+            }
+
+            isCoin() {
+                return true;
+            }
+
+            update() {
+                this.verticalVelocity += .5;
+                this.y += this.verticalVelocity;
+                this.x += this.horizontalVelocity;
+            }
+        }
+
+        class CoinBlock extends Sprite {
+            constructor(x,y,w,h){
+                super(x,y,w,h);
+                this.coinCounter = 0;
+
+                this.images = [];
+                for(let i = 0; i < 2; i++) {
+                    this.images.push( new Image() );
+                    this.images[i].src = 'b' + (i+1) + '.png';
+                }
+            }
+
+            getImage() {
+                if(this.coinCounter > 4) {
+                    return this.images[1];
+                }
+                else
+                    return this.images[0];
+            }
+
+            isCoinBlock() {
+                return true;
+            }
+
+            addCoin(sprite, model) {
+                if(this.coinCounter < 5) {
+
+                    this.coinCounter++;
+                    model.sprites.push( new Coin(sprite.x, sprite.y - 20, 'c.png') )
+                }
+            }
+        }
+
+        class Mario extends Sprite {
+            constructor(x,y){
+                super(x,y,60,95);
+
+                this.prevX = 0;
+                this.prevY = 0;
+
+                this.verticalVelocity = 0;
+                this.imageIndex = 0;
+                this.images = [];
+                this.reversedImages = [];
+                this.jumpTime = 0;
+                this.isFacingRight = true;
+
+                for(let i = 0; i < 5; i++){
+                    this.images.push(new Image());
+                    this.reversedImages.push( new Image() );
+                    this.images[i].src = 'm' + (i+1) + '.png';
+                    this.reversedImages[i].src = 'rm' + (i+1) + '.png';
+                }
+            }
+
+            jump() {
+                this.locationPast();
+
+                if(this.jumpTime < 5)
+                    this.verticalVelocity -= 5;
+            }
+
+            locationPast() {
+                this.prevX = this.x;
+                this.prevY = this.y;
+            }
+
+            isMario() {
+                return true;
+            }
+
+            imageCycle() {
+                if(this.imageIndex != 4)
+                    this.imageIndex++;
+                else
+                    this.imageIndex = 0;
+            }
+
+            getImage() {
+                if(this.isFacingRight)
+                    return this.images[this.imageIndex];
+                else
+                    return this.reversedImages[this.imageIndex];
+            }
+
+            update(){
+                this.verticalVelocity += 1.2;
+                this.y += this.verticalVelocity;
+
+                //Prevents mario from falling below the ground
+                if(this.y > 500)
+                {
+                    this.verticalVelocity = 0.0; // Will basically ground mario, so it will make the vertical velocity 0
+                    this.jumpTime = 0;
+                    this.y = 500; // snap back to the ground
+                }
+
+                if(this.verticalVelocity == 0.0) // Mario is grounded
+                    this.jumpTime = 0;
+                else
+                    this.jumpTime++; // Counts how many frames mario has been in the air
+            }
+        }
+
+        class Controller {
+            constructor(model, view){
+                this.model = model;
+                this.key_left = false;
+                this.key_right = false;
+                this.key_space = false;
+                this.key_c = false;
+                let self = this;
+                this.mario = this.model.sprites[0];
+                this.mario2 = this.model.sprites[1];
+
+                this.initialX = 0;
+                this.initialY = 0;
+
+                view.canvas.addEventListener("mousedown", function(event) { self.mouseDown(event); });
+                view.canvas.addEventListener('mouseup', function(event) { self.mouseUp(event); });
+
+                document.addEventListener('keydown', function(event) { self.keyDown(event); }, false);
+                document.addEventListener('keyup', function(event) { self.keyUp(event); }, false);
+            }
+            mouseDown(event) {
+                this.initialX = event.pageX;
+                this.initialY = event.pageY;
+            }
+            mouseUp(event) {
+                if(this.key_c)
+                    this.model.sprites.push( new CoinBlock(this.initialX + (this.model.sprites[0].x - 500), this.initialY, event.pageX - this.initialX, event.pageY - this.initialY) )
+                else
+                    this.model.sprites.push( new Brick(this.initialX + (this.model.sprites[0].x - 500), this.initialY, event.pageX - this.initialX, event.pageY - this.initialY) )
+            }
+
+            keyDown(event) {
+                if(event.keyCode === 39) this.key_right = true;
+                else if(event.keyCode === 37) this.key_left = true;
+                else if(event.keyCode === 32) this.key_space = true;
+                else if(event.keyCode === 67) this.key_c = !this.key_c;
+            }
+
+            keyUp(event) {
+                if(event.keyCode === 39) this.key_right = false;
+                else if(event.keyCode === 37) this.key_left = false;
+                else if(event.keyCode === 32) this.key_space = false;
+            }
+
+            update(){
+                if(my_id == 1) {
+                    sendCoordinates(this.mario.x, this.mario.y, this.model);
+
+                    if(this.key_right) {
+                        this.mario.locationPast();
+                        this.mario.isFacingRight = true;
+                        this.mario.x += 10;
+                        this.mario.imageCycle();
+                    }
+                    else if(this.key_left) {
+                        this.mario.locationPast();
+                        this.mario.isFacingRight = false;
+                        this.mario.x -= 10;
+                        this.mario.imageCycle();
+                    }
+                    if(this.key_space) {
+                        this.mario.locationPast;
+                        this.mario.jump();
+                    }
+                }
+                else if(my_id == 2) {
+                    sendCoordinates(this.mario2.x, this.mario2.y, this.model);
+
+                    if(this.key_right) {
+                        this.mario2.locationPast();
+                        this.mario2.isFacingRight = true;
+                        this.mario2.x += 10;
+                        this.mario2.imageCycle();
+                    }
+                    else if(this.key_left) {
+                        this.mario2.locationPast();
+                        this.mario2.isFacingRight = false;
+                        this.mario2.x -= 10;
+                        this.mario2.imageCycle();
+                    }
+                    if(this.key_space) {
+                        this.mario2.locationPast;
+                        this.mario2.jump();
+                    }
+                }
+            }
+        }
+
+        class Game {
+            constructor(){
+                this.model = new Model();
+                this.view = new View(this.model);
+                this.controller = new Controller(this.model, this.view);
+                getInitialId(this.model);
+
+                for(let i = 0; i < map[0].coinblocks.length; i++)
+                    this.model.sprites.push( new CoinBlock( map[0].coinblocks[i].x, map[0].coinblocks[i].y, map[0].coinblocks[i].w, map[0].coinblocks[i].h ));
+                for(let i = 0; i < map[0].bricks.length; i++)
+                    this.model.sprites.push( new Brick( map[0].bricks[i].x, map[0].bricks[i].y, map[0].bricks[i].w, map[0].bricks[i].h ) );
+            }
+
+            onTimer() {
+                this.controller.update();
+                this.model.update();
+                this.view.update();
+            }
+        }
+
+        class Model {
+            constructor() {
+                this.sprites = []; // Initializes sprites to be an empty array
+                this.sprites.push( new Mario(500, 500) ); // Adds a new Mario object to the sprites array
+                this.sprites.push( new Mario(400, 500) );
+                this.mario = this.sprites[0];
+                this.mario2 = this.sprites[1];
+
+                // Creates a background image
+                this.background = new Image();
+                this.background.src = 'bg.png';
+
+            }
+            update() {
+                for(let i = 0; i < this.sprites.length; i++){
+                    this.sprites[i].update();
+
+                    let s = this.sprites[i];
+
+                    if(my_id == 1 && i != 0)
+                        this.sprites[i].collisionDetection(this.mario, this.sprites[i], this); // Primary Mario collision
+
+                    if(my_id == 1 && i != 1) 
+                        if(this.sprites[i].collisionDetection(this.mario2, this.sprites[i], this)) {
+                            if(s.isCoinBlock())
+                                s.addCoin(s, this);
+                        }
+                         
+                    if(my_id == 2 && i != 1) 
+                        this.sprites[i].collisionDetection(this.mario2, this.sprites[i], this); // Secondary Mario collision
+                    
+                    if(my_id == 2 && i != 0) 
+                        if(this.sprites[i].collisionDetection(this.mario, this.sprites[i], this)) {
+                            if(s.isCoinBlock())
+                                s.addCoin(s, this);
+                        }
+                }
+            }
+        }
+
+        class View{
+            constructor(model){
+                this.model = model;
+                this.canvas = document.getElementById("myCanvas");
+            }
+            update() {
+                let ctx = this.canvas.getContext("2d");
+                ctx.clearRect(0, 0, 1000, 500);
+
+                if(my_id == 1) {
+                    // Draw twice to append 2 pictures together
+                    ctx.drawImage(this.model.background, -(this.model.sprites[0].x)/10, 0, 1000, 700);
+                    ctx.drawImage(this.model.background, -(this.model.sprites[0].x)/10 + 1000, 0, 1000, 700);
+
+                    // Drawing all of the sprites
+                    for(let i = 0; i < this.model.sprites.length; i++) {
+                        let s = this.model.sprites[i];
+                        if(i == 0) // Primary Mario
+                            ctx.drawImage(s.getImage(), 500, s.y);
+                        else if(i == 1) // Secondary Mario
+                            ctx.drawImage(s.getImage(), s.x - (this.model.sprites[0].x - 500), s.y);
+                        else if(s.isCoinBlock())
+                            ctx.drawImage(s.getImage(), s.x - (this.model.sprites[0].x - 500), s.y, s.w, s.h)
+                        else
+                            ctx.drawImage(s.image, s.x - (this.model.sprites[0].x - 500), s.y, s.w, s.h);
+                    }
+                }
+                else if(my_id == 2) {
+                    // Draw twice to append 2 pictures together
+                    ctx.drawImage(this.model.background, -(this.model.sprites[1].x)/10, 0, 1000, 700);
+                    ctx.drawImage(this.model.background, -(this.model.sprites[1].x)/10 + 1000, 0, 1000, 700);
+
+                    // Drawing all of the sprites
+                    for(let i = 0; i < this.model.sprites.length; i++) {
+                        let s = this.model.sprites[i];
+                        if(i == 0) // Primary Mario
+                            ctx.drawImage(s.getImage(), s.x - (this.model.sprites[1].x - 500), s.y);
+                        else if(i == 1) // Secondary Mario
+                            ctx.drawImage(s.getImage(), 500, s.y);
+                        else if(s.isCoinBlock())
+                            ctx.drawImage(s.getImage(), s.x - (this.model.sprites[1].x - 500), s.y, s.w, s.h)
+                        else
+                            ctx.drawImage(s.image, s.x - (this.model.sprites[1].x - 500), s.y, s.w, s.h);
+                    }
+                }
+
+
+
+
+
+            }
+        }
+
+        let game = new Game();
+        let timer = setInterval(function() { game.onTimer(); }, 30);
+
+    </script>
+</body>
+</html>
